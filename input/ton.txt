@@ -1,0 +1,268 @@
+Blockchain of Blockchains
+TIP
+Terms 'smart contract', 'account' and 'actor' are used interchangeably in this document to describe a blockchain entity.
+
+Single actor
+Let's consider one smart contract.
+
+In TON, it is a thing with properties like address, code, data, balance and others. In other words, it is an object which has some storage and behavior. That behavior has the following pattern:
+
+something happens (the most common situation is that a contract gets a message)
+contract handles that event according to its own properties by executing its code in TON Virtual Machine.
+contract modifies its own properties (code, data and others)
+contract optionally generates outgoing messages
+contract goes into standby mode until the next event occurs
+A combination of these steps is called a transaction. It is important that events are handled one by one, thus transactions are strictly ordered and cannot interrupt each other.
+
+This behavior pattern is well known and called 'Actor'.
+
+The lowest level: Account Chain
+A sequence of transactions Tx1 -> Tx2 -> Tx3 -> .... may be called a chain. And in the considered case it is called AccountChain to emphasize that it is the chain of a single account of transactions.
+
+Now, since nodes that process transactions need from time to time to coordinate the state of the smart contract (to reach a consensus about the state) those transactions are batched: [Tx1 -> Tx2] -> [Tx3 -> Tx4 -> Tx5] -> [] -> [Tx6]. Batching does not intervene in sequencing, each transaction still has only one 'prev tx' and at most one 'next tx', but now this sequence is cut into the blocks.
+
+It is also expedient to include queues of incoming and outgoing messages to blocks. In that case, a block will contain a full set of information which determines and describes what happened to the smart contract during that block.
+
+Many AccountChains: Shards
+Now let's consider many accounts. We can get a few AccountChains and store them together, such a set of AccountChains is called a ShardChain. In the same way, we can cut ShardChain into ShardBlocks, which are an aggregation of individual AccountBlocks.
+
+Dynamic splitting and merging of ShardChains
+Note that since a ShardChain consists of easily distinguished AccountChains, we can easily split it. That way if we have 1 ShardChain which describes events that happen with 1 million accounts and there are too many transactions per second to be processed and stored in one node, so we just divide (or split) that chain into two smaller ShardChains with each chain accounting for half a million accounts and each chain processed on a separate subset of nodes.
+
+Analogously, if some shards became too unoccupied they can be merged into one bigger shard.
+
+There are obviously two limiting cases: when the shard contains only one account (and thus cannot be split further) and when the shard contains all accounts.
+
+Accounts can interact with each other by sending messages. There is a special mechanism of routing which move messages from outgoing queues to corresponding incoming queues and ensures that 1) all messages will be delivered 2) messages will be delivered consecutively (the message sent earlier will reach the destination earlier).
+
+SIDE NOTE
+To make splitting and merging deterministic, an aggregation of AccountChains into shards is based on the bit-representation of account addresses. For example, address looks like (shard prefix, address). That way, all accounts in the shardchain will have exactly the same binary prefix (for instance all addresses will start with 0b00101).
+
+Blockchain
+An aggregation of all shards which contains all accounts behaving by one set of rules is called a Blockchain.
+
+In TON there can be many sets of rules and thus many blockchains which operate simultaneously and can interact with each other by sending messages crosschain in the same way that accounts of one chain can interact with each other.
+
+Workchain: Blockchain with your own rules
+If you want to customize rules of the group of Shardchains, you could create a Workchain. A good example is to make a workchain that works on the base of EVM to run Solidity smart contracts on it.
+
+Theoretically, everyone in community can create own workchain. In fact, it's pretty complicated task to build it, after that to pay (expensive) price of creating it and receive 2/3 of votes from validators to approve creation of your Workchain.
+
+TON allows creating up to 2^32 workchains, each subdivided to up to 2^60 shards.
+
+Nowadays, there are only 2 workchains in TON: MasterChain and BaseChain.
+
+BaseChain is used for everyday transactions between actors because it's pretty cheap, while MasterChain have a crucial function for TON, so let's cover what does it do!
+
+Masterchain: Blockchain of Blockchains
+There is a necessity for the synchronization of message routing and transaction execution. In other words, nodes in the network need a way to fix some 'point' in a multichain state and reach a consensus about that state. In TON, a special chain called MasterChain is used for that purpose. Blocks of masterchain contain additional information (latest block hashes) about all other chains in the system, thus any observer unambiguously determines the state of all multichain systems at a single masterchain block.
+
+
+Smart Contract Addresses
+This section will describe the specifics of smart contract addresses on TON Blockchain. It will also explain how actors are synonymous with smart contracts on TON.
+
+Everything is a Smart Contract
+On TON, smart contracts are built using the Actor model. In fact, actors in TON are technically represented as smart contracts. This means that even your wallet is a simple actor (and a smart contract).
+
+Typically, actors process incoming messages, change their internal state, and generate outbound messages as a result. That's why every actor (i.e., smart contract) on TON Blockchain must have an address, so it is able to receive messages from other actors.
+
+:::info EVM EXPERIENCE On the Ethereum Virtual Machine (EVM), addresses are completely separate from smart contracts. Feel free to learn more about the differences by reading our article "Six unique aspects of TON Blockchain that will surprise Solidity developers" by Tal Kol. :::
+
+Address of Smart Contract
+Smart contract addresses operating on TON typically consist of two main components:
+
+(workchain_id): denotes the workchain ID (a signed 32-bit integer)
+
+(account_id) denotes the address of the account (64-512 bits, depending on the workchain)
+
+In the raw address overview section of this documentation, we'll discuss how (workchain_id, account_id) pairs present themselves.
+
+Workchain ID and Account ID
+Workchain ID
+As we've seen before, it is possible to create as many as 2^32 workchains operating on TON Blockchain. We also noted how 32-bit prefix smart contract addresses identify and are linked to smart contract addresses within different workchains. This allows smart contracts to send and receive messages to and from different workchains on TON Blockchain.
+
+Nowadays, only the Masterchain (workchain_id=-1) and occasionally the basic workchain (workchain_id=0) are running in TON Blockchain.
+
+Both of them have 256-bit addresses, therefore, we assume that the workchain_id is either 0 or -1, and the address within the workchain is precisely 256 bits.
+
+Account ID
+All account IDs on TON make use of 256-bit addresses on the Masterchain and Basechain (or basic workchain).
+
+In fact, Account ID’s (account_id) defined as hash functions for smart contract objects (particular, the SHA-256). Every smart contract operating on TON Blockchain stores two main components. These include:
+
+Compiled code. Logic of the smart contract compiled in the form of bytecode.
+Initial state. The contract's values at the moment of its deployment on-chain.
+Finally, to accurately derive the contract's address, it is necessary to calculate the hash corresponding to the pair (Initial code, Initial state) object. At this time, we won't take a deep dive into how the TVM works, but it's important to understand that account IDs on TON are determined using this formula: : account_id = hash(initial code, initial state)
+
+In time, throughout this documentation, we'll dive deeper into the technical specifications and overview of the TVM and TL-B scheme. Now that we are familiar with the generation of the account_id and their interaction with smart contract addresses on TON, let’s explain Raw and User-Friendly addresses.
+
+Addresses state
+Each address can be in one of possible states:
+
+nonexist - there were no accepted transactions on this address, so it doesn't have any data (or the contract was deleted). We can say that initially all 2256 address are in this state.
+uninit - address has some data, which contains balance and meta info. At this state address doesn't have any smart contract code/persistent data yet. An address enters this state, for example, when it was nonexist and some other address sent some tokens to it.
+active - address has smart contract code, persistent data and balance. At this state it can perform some logic during the transaction and change its persistent data. An address enters this state when it was uninit and there was an incoming message with state_init param (note, that to be able to deploy this address, hash of state_init and code must be equal to address).
+frozen - address cannot perform any operations, this state contains only two hashes of the previous state (code and state cells respectively). When an address's storage charge exceeds its balance, it goes into this state. To unfreeze it, you can send an internal message with state_init and code which store the hashes described earlier and some Toncoin. It can be difficult to recover it, so you should not allow this situation. There is a project to unfreeze the address, which you can find here.
+Raw and User-Friendly Addresses
+After providing a brief overview of how smart contract addresses on TON leverage workchains and account IDs (for the Masterchain and Basechain specifically), it is important to understand that these addresses are expressed in two main formats:
+
+Raw addresses: Original full representation of smart contract addresses.
+User-friendly addresses: User-friendly addresses are an enhanced format of raw address that employ better security and ease of use.
+Below, we’ll explain more about the differences between these two address types and dive deeper into why user-friendly addresses are used on TON.
+
+Raw address
+Raw smart contract addresses consist of a workchain ID and account ID (workchain_id, account_id) and are displayed in the following format:
+
+[decimal workchain_id]:[64 hexadecimal digits with account_id]
+Provided below, is an example of a raw smart contract address using a workchain ID and account ID together (expressed as workchain_id and account_id):
+
+-1:fcb91a3a3816d0f7b8c2c76108b8a9bc5a6b7a55bd79f8ab101c52db29232260
+
+Notice the -1 at the start of the address string, which denotes a workchain_id that belongs to the Masterchain.
+
+:::note Uppercase letters (such as 'A', ‘B’, ‘C’, ‘D’ etc.) may be used in address strings instead of their lower-case counterparts (such as 'a', ‘b’, ’c’ 'd' etc.). :::
+
+Issues With Raw Addresses
+Using the Raw Address form presents two main issues:
+
+When using the raw address format, it's not possible to verify addresses to eliminate errors prior to sending a transaction. This means that if you accidentally add or remove characters in the address string prior to sending the transaction, your transaction will be sent to the wrong destination, resulting in loss of funds.
+When using the raw address format, it's impossible to add special flags like those used when sending transactions that employ user-friendly addresses. To help you better understand this concept, we’ll explain which flags can be used below.
+User-Friendly Address
+User-friendly addresses were developed to secure and simplify the experience for TON users who share addresses on the internet (for example, on public messaging platforms or via their email service providers), as well as in the real world.
+
+User-Friendly Address Structure
+User-friendly addresses are made up of 36 bytes in total and are obtained by generating the following components in order:
+
+[flags - 1 byte] — Flags that are pinned to addresses change the way smart contracts react to the received message. Flags types that employ the user-friendly address format include:
+
+isBounceable. Denotes a bounceable or non-bounceable address type. (0x11 for "bounceable", 0x51 for "non-bounceable")
+isTestnetOnly. Denotes an address type used for testnet purposes only. Addresses beginning with 0x80 should not be accepted by software running on the production network
+isUrlSafe. Denotes a deprecated flag that is defined as URL-safe for an address. All addresses are then considered URL-safe.
+[workchain_id - 1 byte] — The workchain ID (workchain_id) is defined by a signed 8-bit integer workchain_id.
+(0x00 for the BaseChain, 0xff for the MasterChain)
+
+[account_id - 32 byte] — The account ID is made up of a (big-endian) 256-bit address in the workchain.
+
+[address verification - 2 bytes] — In user-friendly addresses, address verification is composed of a CRC16-CCITT signature from the previous 34 bytes. (Example) In fact, the idea pertaining to verification for user-friendly addresses is quite similar to the Luhn algorithm, which is used on all credit cards to prevent users from entering non-existing card numbers by mistake.
+
+The addition of these 4 main components means that: 1 + 1 + 32 + 2 = 36 bytes in total (per user-friendly address).
+
+To generate a user-friendly address, the developer must encode all 36 bytes using either:
+
+base64 (i.e., with digits, upper and lowercase Latin letters, '/' and '+')
+base64url (with '_' and '-' instead of '/' and '+')
+After this process is complete, the generation of a user-friendly address with a length of 48 non-spaced characters is finalized.
+
+:::info DNS ADDRESS FLAGS On TON, DNS addresses such as mywallet.ton are sometimes used instead of raw and user-friendly addresses. In fact, DNS addresses are made up of user-friendly addresses and include all the required flags that allow developers to access all the flags from the DNS record within the TON domain. :::
+
+User-Friendly Address Encoding Examples
+For example, the "test giver" smart contract (a special smart contract residing in the testnet masterchain that sends 2 test tokens to anyone who requests them) makes use of the following raw address:
+
+-1:fcb91a3a3816d0f7b8c2c76108b8a9bc5a6b7a55bd79f8ab101c52db29232260
+
+The above "test giver" raw address must be converted into the user-friendly address form. This is obtained using either the base64 or base64url forms (that we introduced previously) as follows:
+
+kf/8uRo6OBbQ97jCx2EIuKm8Wmt6Vb15+KsQHFLbKSMiYIny (base64)
+kf_8uRo6OBbQ97jCx2EIuKm8Wmt6Vb15-KsQHFLbKSMiYIny (base64url)
+:::info Notice that both forms (base64 and base64url) are valid and must be accepted! :::
+
+Bounceable vs Non-Bounceable Addresses
+The core idea behind the bounceable address flag is sender's funds security.
+
+For example, if the destination smart contract does not exist, or if some issue happens during the transaction, the message will be "bounced" back to the sender and constitute the remainder of the original value of the transaction (minus all transfer and gas fees). This ensures the sender doesn't lose their funds that were sent by accident to an address that cannot accept the transaction.
+
+In relation to bounceable addresses specifically:
+
+The bounceable=false flag generally means the receiver is a wallet.
+The bounceable=true flag typically denotes a custom smart contract with its own application logic (for example, a DEX). In this example, non-bounceable messages should not be sent because of security reasons.
+Feel free to read more on this topic in our documentation to gain a better understanding of non-bounceable messages.
+
+Armored base64 Representations
+Additional binary data related to TON Blockchain employs similar "armored" base64 user-friendly address representations. These differentiate from one another depending on the first 4 characters of their byte tag. For example, 256-bit Ed25519 public keys are represented by first creating a 36-byte sequence using the below process in order:
+
+A single byte tag using the 0x3E format denotes a public key
+A single byte tag using the 0xE6 format denotes a Ed25519 public key
+32 bytes containing the standard binary representation of the Ed25519 public key
+2 bytes containing the big-endian representation of CRC16-CCITT of the previous 34 bytes
+The resulting 36-byte sequence is converted into a 48-character base64 or base64url string in the standard fashion. For example, the Ed25519 public key E39ECDA0A7B0C60A7107EC43967829DBE8BC356A49B9DFC6186B3EAC74B5477D (usually represented by a sequence of 32 bytes such as: 0xE3, 0x9E, ..., 0x7D) presents itself through the "armored" representation as follows:
+
+Pubjns2gp7DGCnEH7EOWeCnb6Lw1akm538YYaz6sdLVHfRB2
+
+Converting User-Friendly Addresses and Raw Addresses
+The simplest way to convert user-friendly and raw addresses is to use one of several TON APIs and other tools, including:
+
+ton.org/address
+dton.io API method
+toncenter API methods in mainnet
+toncenter API methods in testnet
+Additionally, there are two ways to convert user-friendly and raw addresses for wallets using JavaScript:
+
+Convert address from/to user-friendly or raw form using ton.js
+Convert address from/to user-friendly or raw form using tonweb
+It's also possible to make use of similar mechanisms using SDKs.
+
+Address Examples
+Learn more examples on TON Addresses in the TON Cookbook.
+
+Possible problems
+When interacting with the TON blockchain, it's crucial to understand the implications of transferring TON coins to uninit wallet addresses. This section outlines the various scenarios and their outcomes to provide clarity on how such transactions are handled.
+
+What happens when you transfer Toncoin to an uninit address?
+Transaction with state_init included
+If you include the state_init (which consists of the wallet or smart contract's code and data) with your transaction. The smart contract is deployed first using the provided state_init. After deployment, the incoming message is processed, similar to sending to an already initialized account.
+
+Transaction without state_init and bounce flag set
+The message cannot be delivered to the uninit smart contract, and it will be bounced back to the sender. After deducting the consumed gas fees, the remaining amount is returned to the sender's address.
+
+Transaction without state_init and bounce flag unset
+The message cannot be delivered, but it will not bounce back to the sender. Instead, the sent amount will be credited to the receiving address, increasing its balance even though the wallet is not yet initialized. They will be stored there until the address holder deploys a smart wallet contract and then they can access the balance.
+
+How to do it right
+The best way to deploy a wallet is to send some TON to its address (which is not yet initialized) with the bounce flag cleared. After this step, the owner can deploy and initialize the wallet using funds at the current uninitialized address. This step usually occurs on the first wallet operation.
+
+The TON blockchain implements protection against erroneous transactions
+In the TON blockchain, standard wallets and apps automatically manage the complexities of transactions to uninitialized addresses by using bounceable and non-bounceable address, which are described here. It is common practice for wallets, when sending coins to non-initialized addresses, to send coins to both bounceable and non-bounceable addresses without return.
+
+If there is a need to quickly get an address in bounceable/non-bounceable form this can be done here.
+
+Responsibility for custom products
+If you are developing a custom product on the TON blockchain, it is essential to implement similar checks and logic:
+
+Ensure your application verifies whether the recipient address is initialized before sending funds. Based on the address state, use bounceable addresses for user smart contracts with custom application logic to ensure funds are returned. Use non-bounceable addresses for wallets.
+
+
+
+Cells as Data Storage
+Everything in TON is stored in cells. A cell is a data structure containing:
+
+up to 1023 bits of data (not bytes!)
+up to 4 references to other cells
+Bits and references are not intermixed (they are stored separately). Circular references are forbidden: for any cell, none of its descendant cells can have this original cell as reference.
+
+Thus, all cells constitute a directed acyclic graph (DAG). Here is a good picture to illustrate:
+
+Directed Acylic Graph
+
+Cell types
+Currently, there are 5 types of cell: ordinary and 4 exotic. The exotic types are the following:
+
+Pruned branch cell
+Library reference cell
+Merkle proof cell
+Merkle update cell
+:::tip For more on exotic cells see: TVM Whitepaper, Section 3. :::
+
+Cell flavors
+A cell is an opaque object optimized for compact storage.
+
+In particular, it deduplicates data: if there are several equivalent sub-cells referenced in different branches, their content is only stored once. However, opaqueness means that a cell cannot be modified or read directly. Thus, there are 2 additional flavors of the cells:
+
+Builder for partially constructed cells, for which fast operations for appending bitstrings, integers, other cells and references to other cells can be defined.
+Slice for 'dissected' cells representing either the remainder of a partially parsed cell or a value (subcell) residing inside such a cell and extracted from it via a parsing instruction.
+Another special cell flavor is used in TVM:
+
+Continuation for cells containing op-codes (instructions) for TON Virtual Machine, see TVM bird's-eye overview.
+Serialization of data to cells
+Any object in TON (message, message queue, block, whole blockchain state, contract code and data) serializes to a cell.
+
+The process of serialization is described by a TL-B scheme: a formal description of how this object can be serialized into Builder or how to parse an object of a given type from the Slice. TL-B for cells is the same as TL or ProtoBuf for byte-streams.
